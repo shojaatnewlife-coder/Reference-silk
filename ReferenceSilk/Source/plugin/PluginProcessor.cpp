@@ -57,10 +57,6 @@ void SilkProcessor::inviteSave()
     {
         f.getParentDirectory().createDirectory();
         f.replaceWithText (text);
-       #if JUCE_WINDOWS
-        if (f.getParentDirectory().getFileName() == ".reference")
-            f.getParentDirectory().setFileHidden (true);
-       #endif
     }
 }
 

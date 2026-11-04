@@ -379,7 +379,8 @@ void SilkEditor::showInvitePanel (bool show)
     hooks.give = [this] (const String& code, String& out) { return proc.giveThanks (code, out); };
     hooks.redeem = [this] (const String& code) { return proc.redeemThanks (code); };
     invitePanel = std::make_unique<refinv::InvitePanel> (std::move (hooks));
-    invitePanel->onClose = [this] { MessageManager::callAsync ([sp = Component::SafePointer<SilkEditor> (this)] { if (sp != nullptr) sp->showInvitePanel (false); }); };
+    const Component::SafePointer<SilkEditor> safe (this);
+    invitePanel->onClose = [safe] { MessageManager::callAsync ([safe] { if (safe != nullptr) safe->showInvitePanel (false); }); };
     invitePanel->onChanged = [this] { refreshInvite(); };
     addAndMakeVisible (*invitePanel);
     invitePanel->setBounds (getLocalBounds());
