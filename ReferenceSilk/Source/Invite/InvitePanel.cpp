@@ -110,9 +110,9 @@ InvitePanel::InvitePanel (PanelHooks h) : hooks (std::move (h))
     styleLabel (thanksLabel, 0, kDim, Justification::centredRight);
     styleLabel (status, 0, kYellow, Justification::centred);
 
-    title.setText (REF_FA ("دعوت  ") + String::charToString (0x00B7) + "  Reference Silk", dontSendNotification);
-    helpText.setText (REF_FA ("Silk رایگان است. ۱۴ روز کامل کار می‌کند. بعد از آن، یک نفر را دعوت کن تا برای همیشه کامل بماند:\n"
-                      "۱. کد دعوتت را برای یک دوست بفرست.  ۲. او Silk را نصب می‌کند و کد تو را می‌زند.  ۳. کد تشکری که به تو می‌دهد را پایین بنویس."),
+    title.setText (REF_FA ("دعوت دوستان"), dontSendNotification);
+    helpText.setText (REF_FA ("این پلاگین رایگان است و ۱۴ روز کامل کار می‌کند. بعد از آن، با دعوت یک نفر برای همیشه کامل می‌ماند.\n"
+                              "مراحل:  ۱. کد دعوتت را برای یک دوست بفرست.  ۲. دوستت کد تو را در Silk خودش می‌زند.  ۳. کد تشکری که به تو می‌دهد را پایین بنویس."),
                       dontSendNotification);
     myLabel.setText (REF_FA ("کد دعوت تو"), dontSendNotification);
     friendLabel.setText (REF_FA ("کد دعوت دوستت (اگر کسی تو را دعوت کرده)"), dontSendNotification);
