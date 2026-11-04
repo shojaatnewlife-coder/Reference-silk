@@ -1,0 +1,187 @@
+name: Reference Silk (Windows and Mac)
+
+on:
+  push:
+    branches: [main]
+    paths: ['ReferenceSilk/**', '.github/workflows/reference-silk.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: silk
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ReferenceSilk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DREF_BUILD_TESTS=ON
+
+      - name: DSP tests
+        run: |
+          cmake --build build --config Release --target silk_tests --parallel
+          ./build/Release/silk_tests.exe | Tee-Object test-results.txt
+          if ($LASTEXITCODE -ne 0) { Write-Error "DSP tests failed"; exit 1 }
+
+      - name: Invite tests (14 days, invite 1 person)
+        run: |
+          cmake --build build --config Release --target invite_tests --parallel
+          ./build/Release/invite_tests.exe | Tee-Object invite-results.txt
+          if ($LASTEXITCODE -ne 0) { Write-Error "Invite tests failed"; exit 1 }
+
+      - name: Build plugin
+        run: cmake --build build --config Release --target ReferenceSilk_VST3 --parallel
+
+      - name: Validate like a DAW scan (pluginval, strictest level)
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip -OutFile pv.zip
+          Expand-Archive pv.zip -DestinationPath pv -Force
+          New-Item -ItemType Directory -Force pvlogs | Out-Null
+          $vst = Resolve-Path "build/ReferenceSilk_artefacts/Release/VST3/Reference Silk.vst3"
+          & ./pv/pluginval.exe --strictness-level 10 --timeout-ms 300000 --output-dir pvlogs --validate "$vst" | Tee-Object pvlogs/console.txt
+          if ($LASTEXITCODE -ne 0) { Write-Error "pluginval failed with $LASTEXITCODE"; exit 1 }
+
+      - name: Installer
+        run: |
+          $p = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          if (-not (Test-Path "$p\ISCC.exe")) { choco install innosetup -y --no-progress | Out-Null }
+          & "$p\ISCC.exe" /Q Installer/ReferenceSilk.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install over an old v1 copy like a customer, check the plugin is where Cubase looks
+        run: |
+          $old = "$env:CommonProgramFiles\VST3\reference Silk.vst3\Contents\x86_64-win"
+          New-Item -ItemType Directory -Force $old | Out-Null
+          Set-Content -Path "$old\reference Silk.vst3" -Value "old"
+          $exe = Get-ChildItem Installer/Output/*.exe | Select-Object -First 1
+          Start-Process -Wait -FilePath $exe.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          $dirs = Get-ChildItem "$env:CommonProgramFiles\VST3" -Directory | Where-Object { $_.Name -like '*Silk*' }
+          $dirs | ForEach-Object { "found: " + $_.Name }
+          if ($dirs.Count -ne 1 -or $dirs[0].Name -cne 'Reference Silk.vst3') { Write-Error "expected exactly one 'Reference Silk.vst3'"; exit 1 }
+          $bin = "$env:CommonProgramFiles\VST3\Reference Silk.vst3\Contents\x86_64-win\Reference Silk.vst3"
+          if (-not (Test-Path $bin) -or (Get-Item $bin).Length -lt 100000) { Write-Error "setup did not install the plugin"; exit 1 }
+          & ./pv/pluginval.exe --strictness-level 5 --timeout-ms 300000 --validate "$env:CommonProgramFiles\VST3\Reference Silk.vst3" | Tee-Object pvlogs/installed.txt
+          if ($LASTEXITCODE -ne 0) { Write-Error "installed plugin failed pluginval"; exit 1 }
+          exit 0
+
+      - name: Read version
+        id: v
+        shell: bash
+        run: echo "version=$(sed -n 's/^project(ReferenceSilk VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)" >> $GITHUB_OUTPUT
+
+      - name: Rename setup
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item (Get-ChildItem Installer/Output/*.exe | Select-Object -First 1).FullName out/Reference-Silk-Setup.exe
+
+      - name: Publish Windows setup right away (does not wait for Mac)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: silk-v${{ steps.v.outputs.version }}
+          name: Reference Silk ${{ steps.v.outputs.version }}
+          make_latest: true
+          files: ReferenceSilk/out/Reference-Silk-Setup.exe
+          body: |
+            Reference Silk — رایگان. ۱۴ روز کامل کار می‌کند؛ بعد با دعوت ۱ نفر برای همیشه کامل می‌ماند.
+
+            ویندوز:
+            ۱. فایل Reference-Silk-Setup.exe را دانلود کن.
+            ۲. روی آن دوبار کلیک کن و Install را بزن.
+            ۳. در DAW (مثلاً Cubase) دنبال Reference Silk بگرد.
+
+            مک:
+            ۱. فایل Reference-Silk-Mac.pkg را دانلود کن.
+            ۲. روی آن دوبار کلیک کن و مراحل را جلو برو.
+            ۳. اگر باز نشد: راست‌کلیک ← Open. یا System Settings ← Privacy & Security ← Open Anyway.
+
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Reference-Silk-Windows
+          path: |
+            ReferenceSilk/Installer/Output/*.exe
+            ReferenceSilk/test-results.txt
+            ReferenceSilk/invite-results.txt
+            ReferenceSilk/pvlogs/**
+          if-no-files-found: warn
+
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ReferenceSilk
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (universal, Apple Silicon and Intel)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DREF_BUILD_TESTS=ON
+      - name: DSP tests
+        run: |
+          cmake --build build --config Release --target silk_tests --parallel 4
+          ./build/silk_tests
+      - name: Invite tests
+        run: |
+          cmake --build build --config Release --target invite_tests --parallel 4
+          ./build/invite_tests
+      - name: Build VST3 and AU
+        run: cmake --build build --config Release --target ReferenceSilk_VST3 ReferenceSilk_AU --parallel 4
+      - name: Make installer
+        run: bash Installer/mac/build-pkg.sh
+      - name: Test, install the pkg like a customer
+        run: |
+          sudo installer -pkg Release/*.pkg -target /
+          N="Reference Silk"
+          ls -d "/Library/Audio/Plug-Ins/VST3/$N.vst3" "/Library/Audio/Plug-Ins/Components/$N.component"
+          lipo -archs "/Library/Audio/Plug-Ins/VST3/$N.vst3/Contents/MacOS/$N" | tee /dev/stderr | grep -q arm64
+          lipo -archs "/Library/Audio/Plug-Ins/VST3/$N.vst3/Contents/MacOS/$N" | grep -q x86_64
+          codesign --verify --deep "/Library/Audio/Plug-Ins/VST3/$N.vst3"
+          codesign --verify --deep "/Library/Audio/Plug-Ins/Components/$N.component"
+      - name: Test, Apple Audio Unit validator (as Logic does)
+        run: |
+          killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
+          sleep 5
+          auval -v aufx RfSk Rfnc | tee auval.txt
+          grep -q "AU VALIDATION SUCCEEDED" auval.txt
+      - name: Test, pluginval on the installed VST3 and AU
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --timeout-ms 300000 --validate "/Library/Audio/Plug-Ins/VST3/Reference Silk.vst3" | tee pluginval-mac.txt
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --skip-gui-tests --timeout-ms 300000 --validate "/Library/Audio/Plug-Ins/Components/Reference Silk.component"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reference-Silk-Mac
+          path: |
+            ReferenceSilk/Release/*.pkg
+            ReferenceSilk/auval.txt
+            ReferenceSilk/pluginval-mac.txt
+
+  # the Mac installer joins the same release once it is ready
+  mac-release:
+    needs: [ windows, mac ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Reference-Silk-Mac
+          path: files
+      - name: Read version
+        id: v
+        run: echo "version=$(sed -n 's/^project(ReferenceSilk VERSION \([0-9.]*\).*/\1/p' ReferenceSilk/CMakeLists.txt)" >> $GITHUB_OUTPUT
+      - run: cp files/Release/*.pkg Reference-Silk-Mac.pkg
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: silk-v${{ steps.v.outputs.version }}
+          files: Reference-Silk-Mac.pkg
