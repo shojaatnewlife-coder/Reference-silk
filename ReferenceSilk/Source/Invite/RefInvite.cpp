@@ -199,8 +199,11 @@ std::string Invite::save() const
     return body + "sig=" + toHex (hmacSha256 (key(), "state|" + cid + "|" + body)).substr (0, 32) + "\n";
 }
 
-bool Invite::parse (const std::string& text, State& out) const
+bool Invite::parse (const std::string& textIn, State& out) const
 {
+    std::string text; // line endings may have been changed (\r\n) by the file writer or an editor
+    for (char ch : textIn)
+        if (ch != '\r') text += ch;
     const auto at = text.find ("sig=");
     if (at == std::string::npos) return false;
     const auto body = text.substr (0, at);

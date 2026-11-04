@@ -44,6 +44,15 @@ int main()
         CHECK (a.daysLeft() == 0 && a.demo(), "after 14 days: demo");
     }
 
+    // Windows line endings in the saved file
+    {
+        std::string crlf;
+        for (char ch : ali.save()) { if (ch == '\n') crlf += '\r'; crlf += ch; }
+        Invite a ("ALI-PC-DEVICE", "silk", "SLK");
+        a.load ({ crlf }, T0 + kDay);
+        CHECK (! a.wasTampered() && a.daysLeft() == 13, "file saved with Windows line endings still reads fine");
+    }
+
     // clock moved back
     {
         Invite a ("ALI-PC-DEVICE", "silk", "SLK");

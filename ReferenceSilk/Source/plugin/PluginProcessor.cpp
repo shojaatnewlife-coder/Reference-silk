@@ -56,7 +56,7 @@ void SilkProcessor::inviteSave()
     for (auto& f : inviteFiles())
     {
         f.getParentDirectory().createDirectory();
-        f.replaceWithText (text);
+        f.replaceWithText (text, false, false, "\n");
     }
 }
 
